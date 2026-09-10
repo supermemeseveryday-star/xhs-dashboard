@@ -1506,24 +1506,31 @@ async function callAI(messages, onChunk) {
   headers['Authorization'] = `Bearer ${s.apiKey}`;
 
   let fetchUrl = s.apiUrl;
+  let fetchBody;
 
-  // CORS proxy fallback
-  if (s.useCorsProxy) {
-    fetchUrl = 'https://corsproxy.io/?' + encodeURIComponent(s.apiUrl);
+  // If using local proxy, wrap in proxy format
+  if (fetchUrl.includes('localhost:8877') || fetchUrl.includes('127.0.0.1:8877')) {
+    fetchBody = JSON.stringify({
+      apiUrl: 'https://token-plan-sgp.xiaomimimo.com/v1/chat/completions',
+      apiKey: s.apiKey,
+      payload: { model: s.apiModel, messages, temperature: 0.7, max_tokens: 8192 }
+    });
+  } else {
+    // Direct API call (or CORS proxy)
+    if (s.useCorsProxy) {
+      fetchUrl = 'https://corsproxy.io/?' + encodeURIComponent(s.apiUrl);
+    }
+    fetchBody = JSON.stringify({
+      model: s.apiModel, messages, stream: false, temperature: 0.7, max_tokens: 8192
+    });
   }
 
   let resp;
   try {
     resp = await fetch(fetchUrl, {
       method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        model: s.apiModel,
-        messages,
-        stream: false,
-        temperature: 0.7,
-        max_tokens: 4096
-      })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
+      body: fetchBody
     });
   } catch(e) {
     throw new Error(`网络请求失败: ${e.message}\n\n可能原因:\n1. CORS 跨域被拦截 → 试试设置里打开「CORS代理」\n2. API 地址填错了\n3. 网络不通`);
@@ -1541,9 +1548,10 @@ async function callAI(messages, onChunk) {
   }
 
   const json = await resp.json();
-  const content = json.choices?.[0]?.message?.content;
+  // MiMo reasoning model: content may be in reasoning_content
+  const content = json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.reasoning_content || '';
   if (!content) {
-    throw new Error(`API 返回空内容。原始响应:\n${JSON.stringify(json).slice(0, 300)}`);
+    throw new Error(`API 返回空内容。原始响应:\n${JSON.stringify(json).slice(0, 500)}`);
   }
   return content;
 }
@@ -1791,15 +1799,28 @@ async function testApi() {
 
   const fetchUrl = useProxy ? 'https://corsproxy.io/?' + encodeURIComponent(url) : url;
 
+  // Detect if using local proxy
+  const isLocalProxy = url.includes('localhost:8877') || url.includes('127.0.0.1:8877');
+  let fetchBody;
+  if (isLocalProxy) {
+    fetchBody = JSON.stringify({
+      apiUrl: 'https://token-plan-sgp.xiaomimimo.com/v1/chat/completions',
+      apiKey: key,
+      payload: { model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 }
+    });
+  } else {
+    fetchBody = JSON.stringify({ model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 });
+  }
+
   try {
-    const resp = await fetch(fetchUrl, {
+    const resp = await fetch(isLocalProxy ? url : fetchUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model: model || 'gpt-4o-mini', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 20 })
+      body: fetchBody
     });
     if (resp.ok) {
       const json = await resp.json();
-      const reply = json.choices?.[0]?.message?.content || 'OK';
+      const reply = json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.reasoning_content || 'OK';
       status.innerHTML = `<span style="color:var(--green)">✅ 连接成功: ${esc(reply.slice(0, 30))}</span>`;
     } else {
       let errMsg = '';
