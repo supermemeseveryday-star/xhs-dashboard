@@ -1501,35 +1501,23 @@ async function callAI(messages) {
     endpoint += '/chat/completions';
   }
 
-  // Always use CORS proxy (browser can't call external APIs directly)
-  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(endpoint);
-
-  const payload = {
-    model: s.apiModel,
-    messages,
-    temperature: 0.7,
-    max_tokens: 8192
-  };
+  // Use local proxy server (avoids CORS issues)
+  const proxyUrl = 'http://localhost:8877/api/chat';
+  const fetchBody = JSON.stringify({
+    apiUrl: endpoint,
+    apiKey: s.apiKey,
+    payload: { model: s.apiModel, messages, temperature: 0.7, max_tokens: 8192 }
+  });
 
   let resp;
   try {
     resp = await fetch(proxyUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
-      body: JSON.stringify(payload)
+      headers: { 'Content-Type': 'application/json' },
+      body: fetchBody
     });
   } catch(e) {
-    // If corsproxy.io fails, try alternative
-    try {
-      const altProxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(endpoint);
-      resp = await fetch(altProxy, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
-        body: JSON.stringify(payload)
-      });
-    } catch(e2) {
-      throw new Error(`网络请求失败: ${e2.message}\n\nCORS 代理都不通，请检查网络。`);
-    }
+    throw new Error(`代理服务器连不上 (${e.message})\n\n请确保 proxy.py 在运行:\npython3 /root/zz/dashboard/proxy.py`);
   }
 
   if (!resp.ok) {
@@ -1794,13 +1782,15 @@ async function testApi() {
   let endpoint = url.replace(/\/+$/, '');
   if (!endpoint.endsWith('/chat/completions')) endpoint += '/chat/completions';
 
-  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(endpoint);
-
   try {
-    const resp = await fetch(proxyUrl, {
+    const resp = await fetch('http://localhost:8877/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiUrl: endpoint,
+        apiKey: key,
+        payload: { model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 }
+      })
     });
     if (resp.ok) {
       const json = await resp.json();
@@ -1812,7 +1802,7 @@ async function testApi() {
       status.innerHTML = `<span style="color:var(--red)">❌ ${resp.status}: ${esc(errMsg.slice(0, 80))}</span>`;
     }
   } catch (e) {
-    status.innerHTML = `<span style="color:var(--red)">❌ ${esc(e.message)}</span>`;
+    status.innerHTML = `<span style="color:var(--red)">❌ 代理服务器连不上，请确保 proxy.py 在运行</span>`;
   }
 }
 
