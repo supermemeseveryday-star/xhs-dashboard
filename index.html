@@ -572,6 +572,10 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
             <div class="fg"><label>Model *</label><input id="s-api-model" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus"></div>
             <div class="fg"><label>API Key *</label><input id="s-api-key" type="password" placeholder="sk-..."></div>
             <div class="fg"><label>System Prompt（可选，高级）</label><textarea id="s-api-prompt" rows="4" placeholder="留空使用默认提示词。自定义可覆盖AI采集时的行为。"></textarea></div>
+            <div class="fg" style="display:flex;align-items:center;gap:10px">
+              <input type="checkbox" id="s-cors-proxy" style="width:auto">
+              <label for="s-cors-proxy" style="margin:0;cursor:pointer;font-size:12px;text-transform:none;letter-spacing:0;color:var(--text)">使用 CORS 代理（如果 API 调不通就打开这个）</label>
+            </div>
             <div style="display:flex;gap:8px;align-items:center">
               <button class="btn btn-p" onclick="saveSettings()">💾 保存设置</button>
               <button class="btn btn-ghost btn-sm" onclick="testApi()">🔌 测试连接</button>
@@ -629,7 +633,7 @@ function save(d) { localStorage.setItem(K, JSON.stringify(d)); }
 function fresh() {
   return { sources:[], briefs:[], drafts:[], facts:[], reviews:[],
     voice:{persona:'',style:'',redlines:'',headline:'',opening:'',closing:'',other:''},
-    settings:{account:'',tags:'',platform:'小红书',apiUrl:'',apiModel:'',apiKey:'',apiPrompt:''}, training:[], _nid:1, activity:[] };
+    settings:{account:'',tags:'',platform:'小红书',apiUrl:'',apiModel:'',apiKey:'',apiPrompt:'',useCorsProxy:false}, training:[], _nid:1, activity:[] };
 }
 function nid(d) { d._nid=(d._nid||1)+1; return 'i'+d._nid; }
 function addActivity(d, msg) { d.activity.unshift({msg, time:now()}); if(d.activity.length>50) d.activity.length=50; }
@@ -1351,13 +1355,15 @@ function loadSettings(d) {
   $('#s-api-model').value = s.apiModel||'';
   $('#s-api-key').value = s.apiKey||'';
   $('#s-api-prompt').value = s.apiPrompt||'';
+  $('#s-cors-proxy').checked = !!s.useCorsProxy;
 }
 function saveSettings() {
   const d = load();
   d.settings = {
     account:$('#s-account').value, tags:$('#s-tags').value, platform:$('#s-platform').value,
     apiUrl:$('#s-api-url').value, apiModel:$('#s-api-model').value,
-    apiKey:$('#s-api-key').value, apiPrompt:$('#s-api-prompt').value
+    apiKey:$('#s-api-key').value, apiPrompt:$('#s-api-prompt').value,
+    useCorsProxy:$('#s-cors-proxy').checked
   };
   save(d); toast('设置已保存 ⚙️');
 }
@@ -1493,54 +1499,62 @@ function doAddReview() {
 async function callAI(messages, onChunk) {
   const d = load();
   const s = d.settings;
-  if (!s.apiUrl || !s.apiKey) { toast('请先在设置里配置 API Endpoint 和 Key', 't-err'); return null; }
+  if (!s.apiUrl || !s.apiKey) { throw new Error('请先在设置里配置 API Endpoint 和 Key'); }
 
-  const resp = await fetch(s.apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
-    body: JSON.stringify({
-      model: s.apiModel,
-      messages,
-      stream: !!onChunk,
-      temperature: 0.7,
-      max_tokens: 4096
-    })
-  });
+  const headers = { 'Content-Type': 'application/json' };
+  // Some APIs use x-api-key, some use Authorization
+  headers['Authorization'] = `Bearer ${s.apiKey}`;
+
+  let fetchUrl = s.apiUrl;
+
+  // CORS proxy fallback
+  if (s.useCorsProxy) {
+    fetchUrl = 'https://corsproxy.io/?' + encodeURIComponent(s.apiUrl);
+  }
+
+  let resp;
+  try {
+    resp = await fetch(fetchUrl, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        model: s.apiModel,
+        messages,
+        stream: false,
+        temperature: 0.7,
+        max_tokens: 4096
+      })
+    });
+  } catch(e) {
+    throw new Error(`网络请求失败: ${e.message}\n\n可能原因:\n1. CORS 跨域被拦截 → 试试设置里打开「CORS代理」\n2. API 地址填错了\n3. 网络不通`);
+  }
 
   if (!resp.ok) {
-    const err = await resp.text();
-    toast(`API 错误: ${resp.status}`, 't-err');
-    console.error('API Error:', err);
-    return null;
+    let errMsg = '';
+    try {
+      const errJson = await resp.json();
+      errMsg = errJson.error?.message || errJson.message || JSON.stringify(errJson);
+    } catch(e) {
+      errMsg = await resp.text();
+    }
+    throw new Error(`API 返回 ${resp.status}: ${errMsg.slice(0, 200)}`);
   }
 
-  if (onChunk) {
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let full = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      for (const line of chunk.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') break;
-        try {
-          const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-          if (delta) { full += delta; onChunk(full); }
-        } catch(e) {}
-      }
-    }
-    return full;
-  } else {
-    const json = await resp.json();
-    return json.choices?.[0]?.message?.content || '';
+  const json = await resp.json();
+  const content = json.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error(`API 返回空内容。原始响应:\n${JSON.stringify(json).slice(0, 300)}`);
   }
+  return content;
+}
+
+function showEditorError(msg) {
+  const body = $('#ed-body');
+  body.innerHTML = `<div style="padding:16px;background:var(--red-bg);border:1px solid rgba(255,77,106,0.3);border-radius:8px;color:var(--red2);font-size:13px;line-height:1.7;white-space:pre-wrap">${esc(msg)}</div>`;
 }
 
 async function aiGenerate() {
-  if (!currentDraftId) return;
+  if (!currentDraftId) { toast('请先打开一个草稿', 't-err'); return; }
   const d = load();
   const draft = d.drafts.find(x => x.id === currentDraftId);
   if (!draft) return;
@@ -1604,50 +1618,54 @@ ${v.closing || '总结+互动引导'}
   userPrompt += `\n\n请直接输出笔记内容，不要解释你的思路。`;
 
   const btn = $('#ai-gen-btn');
+  const origText = btn.textContent;
   btn.textContent = '⏳ 生成中...';
   btn.disabled = true;
-  $('#ed-body').innerHTML = '<p style="color:var(--text3)">🤖 AI 正在生成...</p>';
+  $('#ed-body').innerHTML = '<p style="color:var(--text3)">🤖 AI 正在生成，请稍候...</p>';
 
-  const result = await callAI(
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    (partial) => {
-      // Stream: update editor in real-time
-      const formatted = partial.replace(/\n/g, '<br>');
-      $('#ed-body').innerHTML = formatted;
-    }
-  );
+  try {
+    const result = await callAI(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ]
+    );
 
-  btn.textContent = '🤖 AI生成';
-  btn.disabled = false;
+    if (!result) { showEditorError('API 返回了空内容'); return; }
 
-  if (!result) { $('#ed-body').innerHTML = draft.content || ''; return; }
-
-  // Format result into HTML
-  const lines = result.split('\n');
-  let html = '';
-  let firstLine = true;
-  for (const line of lines) {
-    if (firstLine && (line.startsWith('#') || line.length < 40)) {
-      // First line might be the title
-      const title = line.replace(/^#+\s*/, '').trim();
-      if (title && !$('#ed-title').value) $('#ed-title').value = title;
+    // Format result into HTML
+    const lines = result.split('\n');
+    let html = '';
+    let firstLine = true;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) { html += '<br>'; continue; }
+      if (firstLine && (trimmed.startsWith('#') || trimmed.length < 40)) {
+        const title = trimmed.replace(/^#+\s*/, '').trim();
+        if (title && !$('#ed-title').value) $('#ed-title').value = title;
+        firstLine = false;
+        continue;
+      }
       firstLine = false;
-      continue;
+      html += `<p>${esc(trimmed)}</p>`;
     }
-    firstLine = false;
-    if (line.trim()) html += `<p>${esc(line)}</p>`;
+    if (html) $('#ed-body').innerHTML = html;
+
+    // Auto-save
+    edSave();
+    toast('AI 生成完成 ✅');
+
+    // Save training log
+    saveTrainingLog(draft, brief, sources, systemPrompt, userPrompt, result);
+
+  } catch(e) {
+    showEditorError(e.message);
+    toast('生成失败，详见编辑器', 't-err');
+    console.error('AI Generate Error:', e);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
   }
-  if (html) $('#ed-body').innerHTML = html;
-
-  // Auto-save
-  edSave();
-  toast('AI 生成完成 ✅');
-
-  // Save training log
-  saveTrainingLog(draft, brief, sources, systemPrompt, userPrompt, result);
 }
 
 function saveTrainingLog(draft, brief, sources, systemPrompt, userPrompt, result) {
@@ -1765,13 +1783,16 @@ async function testApi() {
   const url = $('#s-api-url').value;
   const model = $('#s-api-model').value;
   const key = $('#s-api-key').value;
+  const useProxy = $('#s-cors-proxy').checked;
   const status = $('#api-test-status');
 
   if (!url || !key) { status.innerHTML = '<span style="color:var(--red)">请填写 Endpoint 和 Key</span>'; return; }
   status.innerHTML = '<span style="color:var(--orange)">测试中...</span>';
 
+  const fetchUrl = useProxy ? 'https://corsproxy.io/?' + encodeURIComponent(url) : url;
+
   try {
-    const resp = await fetch(url, {
+    const resp = await fetch(fetchUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
       body: JSON.stringify({ model: model || 'gpt-4o-mini', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 20 })
@@ -1781,11 +1802,12 @@ async function testApi() {
       const reply = json.choices?.[0]?.message?.content || 'OK';
       status.innerHTML = `<span style="color:var(--green)">✅ 连接成功: ${esc(reply.slice(0, 30))}</span>`;
     } else {
-      const err = await resp.text();
-      status.innerHTML = `<span style="color:var(--red)">❌ ${resp.status}: ${esc(err.slice(0, 60))}</span>`;
+      let errMsg = '';
+      try { const j = await resp.json(); errMsg = j.error?.message || JSON.stringify(j); } catch(e) { errMsg = await resp.text(); }
+      status.innerHTML = `<span style="color:var(--red)">❌ ${resp.status}: ${esc(errMsg.slice(0, 80))}</span>`;
     }
   } catch (e) {
-    status.innerHTML = `<span style="color:var(--red)">❌ 网络错误: ${esc(e.message)}</span>`;
+    status.innerHTML = `<span style="color:var(--red)">❌ ${esc(e.message)}<br><small>试试勾选「CORS代理」</small></span>`;
   }
 }
 
