@@ -568,14 +568,10 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
         <div class="card" style="margin-bottom:16px">
           <div class="card-header"><h3>🤖 AI 接口配置</h3><span style="font-size:11px;color:var(--text3)">用于AI信源采集</span></div>
           <div class="card-body">
-            <div class="fg"><label>API Endpoint *</label><input id="s-api-url" placeholder="https://api.openai.com/v1/chat/completions"></div>
-            <div class="fg"><label>Model *</label><input id="s-api-model" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus"></div>
+            <div class="fg"><label>API Endpoint *</label><input id="s-api-url" placeholder="https://token-plan-sgp.xiaomimimo.com/v1"></div>
+            <div class="fg"><label>Model *</label><input id="s-api-model" placeholder="mimo-v2.5-pro"></div>
             <div class="fg"><label>API Key *</label><input id="s-api-key" type="password" placeholder="sk-..."></div>
             <div class="fg"><label>System Prompt（可选，高级）</label><textarea id="s-api-prompt" rows="4" placeholder="留空使用默认提示词。自定义可覆盖AI采集时的行为。"></textarea></div>
-            <div class="fg" style="display:flex;align-items:center;gap:10px">
-              <input type="checkbox" id="s-cors-proxy" style="width:auto">
-              <label for="s-cors-proxy" style="margin:0;cursor:pointer;font-size:12px;text-transform:none;letter-spacing:0;color:var(--text)">使用 CORS 代理（如果 API 调不通就打开这个）</label>
-            </div>
             <div style="display:flex;gap:8px;align-items:center">
               <button class="btn btn-p" onclick="saveSettings()">💾 保存设置</button>
               <button class="btn btn-ghost btn-sm" onclick="testApi()">🔌 测试连接</button>
@@ -1355,15 +1351,13 @@ function loadSettings(d) {
   $('#s-api-model').value = s.apiModel||'';
   $('#s-api-key').value = s.apiKey||'';
   $('#s-api-prompt').value = s.apiPrompt||'';
-  $('#s-cors-proxy').checked = !!s.useCorsProxy;
 }
 function saveSettings() {
   const d = load();
   d.settings = {
     account:$('#s-account').value, tags:$('#s-tags').value, platform:$('#s-platform').value,
     apiUrl:$('#s-api-url').value, apiModel:$('#s-api-model').value,
-    apiKey:$('#s-api-key').value, apiPrompt:$('#s-api-prompt').value,
-    useCorsProxy:$('#s-cors-proxy').checked
+    apiKey:$('#s-api-key').value, apiPrompt:$('#s-api-prompt').value
   };
   save(d); toast('设置已保存 ⚙️');
 }
@@ -1496,44 +1490,46 @@ function doAddReview() {
 // ═══════════════════════════════════════
 // AI GENERATION
 // ═══════════════════════════════════════
-async function callAI(messages, onChunk) {
+async function callAI(messages) {
   const d = load();
   const s = d.settings;
   if (!s.apiUrl || !s.apiKey) { throw new Error('请先在设置里配置 API Endpoint 和 Key'); }
 
-  const headers = { 'Content-Type': 'application/json' };
-  // Some APIs use x-api-key, some use Authorization
-  headers['Authorization'] = `Bearer ${s.apiKey}`;
-
-  let fetchUrl = s.apiUrl;
-  let fetchBody;
-
-  // If using local proxy, wrap in proxy format
-  if (fetchUrl.includes('localhost:8877') || fetchUrl.includes('127.0.0.1:8877')) {
-    fetchBody = JSON.stringify({
-      apiUrl: 'https://token-plan-sgp.xiaomimimo.com/v1/chat/completions',
-      apiKey: s.apiKey,
-      payload: { model: s.apiModel, messages, temperature: 0.7, max_tokens: 8192 }
-    });
-  } else {
-    // Direct API call (or CORS proxy)
-    if (s.useCorsProxy) {
-      fetchUrl = 'https://corsproxy.io/?' + encodeURIComponent(s.apiUrl);
-    }
-    fetchBody = JSON.stringify({
-      model: s.apiModel, messages, stream: false, temperature: 0.7, max_tokens: 8192
-    });
+  // Ensure endpoint ends with /chat/completions
+  let endpoint = s.apiUrl.replace(/\/+$/, '');
+  if (!endpoint.endsWith('/chat/completions')) {
+    endpoint += '/chat/completions';
   }
+
+  // Always use CORS proxy (browser can't call external APIs directly)
+  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(endpoint);
+
+  const payload = {
+    model: s.apiModel,
+    messages,
+    temperature: 0.7,
+    max_tokens: 8192
+  };
 
   let resp;
   try {
-    resp = await fetch(fetchUrl, {
+    resp = await fetch(proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
-      body: fetchBody
+      body: JSON.stringify(payload)
     });
   } catch(e) {
-    throw new Error(`网络请求失败: ${e.message}\n\n可能原因:\n1. CORS 跨域被拦截 → 试试设置里打开「CORS代理」\n2. API 地址填错了\n3. 网络不通`);
+    // If corsproxy.io fails, try alternative
+    try {
+      const altProxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(endpoint);
+      resp = await fetch(altProxy, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
+        body: JSON.stringify(payload)
+      });
+    } catch(e2) {
+      throw new Error(`网络请求失败: ${e2.message}\n\nCORS 代理都不通，请检查网络。`);
+    }
   }
 
   if (!resp.ok) {
@@ -1544,14 +1540,13 @@ async function callAI(messages, onChunk) {
     } catch(e) {
       errMsg = await resp.text();
     }
-    throw new Error(`API 返回 ${resp.status}: ${errMsg.slice(0, 200)}`);
+    throw new Error(`API 返回 ${resp.status}: ${errMsg.slice(0, 300)}`);
   }
 
   const json = await resp.json();
-  // MiMo reasoning model: content may be in reasoning_content
   const content = json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.reasoning_content || '';
   if (!content) {
-    throw new Error(`API 返回空内容。原始响应:\n${JSON.stringify(json).slice(0, 500)}`);
+    throw new Error(`API 返回空内容:\n${JSON.stringify(json).slice(0, 500)}`);
   }
   return content;
 }
@@ -1791,32 +1786,21 @@ async function testApi() {
   const url = $('#s-api-url').value;
   const model = $('#s-api-model').value;
   const key = $('#s-api-key').value;
-  const useProxy = $('#s-cors-proxy').checked;
   const status = $('#api-test-status');
 
   if (!url || !key) { status.innerHTML = '<span style="color:var(--red)">请填写 Endpoint 和 Key</span>'; return; }
   status.innerHTML = '<span style="color:var(--orange)">测试中...</span>';
 
-  const fetchUrl = useProxy ? 'https://corsproxy.io/?' + encodeURIComponent(url) : url;
+  let endpoint = url.replace(/\/+$/, '');
+  if (!endpoint.endsWith('/chat/completions')) endpoint += '/chat/completions';
 
-  // Detect if using local proxy
-  const isLocalProxy = url.includes('localhost:8877') || url.includes('127.0.0.1:8877');
-  let fetchBody;
-  if (isLocalProxy) {
-    fetchBody = JSON.stringify({
-      apiUrl: 'https://token-plan-sgp.xiaomimimo.com/v1/chat/completions',
-      apiKey: key,
-      payload: { model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 }
-    });
-  } else {
-    fetchBody = JSON.stringify({ model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 });
-  }
+  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(endpoint);
 
   try {
-    const resp = await fetch(isLocalProxy ? url : fetchUrl, {
+    const resp = await fetch(proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: fetchBody
+      body: JSON.stringify({ model: model || 'mimo-v2.5-pro', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 100 })
     });
     if (resp.ok) {
       const json = await resp.json();
@@ -1828,7 +1812,7 @@ async function testApi() {
       status.innerHTML = `<span style="color:var(--red)">❌ ${resp.status}: ${esc(errMsg.slice(0, 80))}</span>`;
     }
   } catch (e) {
-    status.innerHTML = `<span style="color:var(--red)">❌ ${esc(e.message)}<br><small>试试勾选「CORS代理」</small></span>`;
+    status.innerHTML = `<span style="color:var(--red)">❌ ${esc(e.message)}</span>`;
   }
 }
 
