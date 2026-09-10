@@ -1,0 +1,85 @@
+/* ── Floating Button ── */
+#xhs-workstation-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 52px;
+  height: 52px;
+  background: linear-gradient(135deg, #ff4d6a, #ff8c42);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 99999;
+  box-shadow: 0 4px 20px rgba(255, 77, 106, 0.4);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+#xhs-workstation-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 28px rgba(255, 77, 106, 0.5);
+}
+
+#xhs-workstation-btn:active {
+  transform: scale(0.95);
+}
+
+.xhs-ws-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.xhs-ws-tooltip {
+  position: absolute;
+  right: 64px;
+  background: #1a1d27;
+  color: #e8eaf0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+#xhs-workstation-btn:hover .xhs-ws-tooltip {
+  opacity: 1;
+}
+
+/* ── Notification ── */
+#xhs-ws-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 999999;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  animation: xhsWsSlideIn 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.xhs-ws-notif-success { background: #10b981; }
+.xhs-ws-notif-warn { background: #f59e0b; }
+.xhs-ws-notif-error { background: #ef4444; }
+
+.xhs-ws-notif-hide {
+  animation: xhsWsSlideOut 0.3s ease forwards;
+}
+
+@keyframes xhsWsSlideIn {
+  from { transform: translateX(120%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes xhsWsSlideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(120%); opacity: 0; }
+}

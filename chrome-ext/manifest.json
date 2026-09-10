@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "小红书工作台 - 信源采集",
+  "version": "1.0.0",
+  "description": "一键采集小红书内容到工作台，支持笔记数据和创作者中心分析",
+  "permissions": ["activeTab", "storage", "contextMenus", "scripting"],
+  "host_permissions": ["https://*.xiaohongshu.com/*", "http://localhost:*/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.xiaohongshu.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html"],
+      "matches": ["https://*.xiaohongshu.com/*"]
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:360px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif;background:#0c0e14;color:#e8eaf0;font-size:13px}
+.header{padding:14px 16px;background:linear-gradient(135deg,#ff4d6a,#ff8c42);display:flex;align-items:center;gap:10px}
+.header .logo{font-size:22px}
+.header h1{font-size:14px;font-weight:700;color:#fff}
+.header .sub{font-size:11px;color:rgba(255,255,255,0.8)}
+.actions{padding:12px 16px;display:flex;gap:8px}
+.btn{flex:1;padding:8px 12px;border-radius:6px;border:none;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;transition:all .15s}
+.btn-p{background:#6366f1;color:#fff}
+.btn-p:hover{background:#818cf8}
+.btn-g{background:#10b981;color:#fff}
+.btn-g:hover{background:#34d399}
+.btn-ghost{background:#1e2230;color:#a0a5b8;border:1px solid #252938}
+.btn-ghost:hover{border-color:#3b4054;color:#e8eaf0}
+.btn-s{background:#252938;color:#a0a5b8;font-size:11px;padding:6px 10px}
+.btn-s:hover{background:#2f3448}
+.btn-d{background:transparent;color:#ff4d6a;font-size:11px;padding:6px 8px}
+.list{max-height:300px;overflow-y:auto;padding:0 16px}
+.item{padding:10px 12px;background:#181b25;border:1px solid #252938;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .15s}
+.item:hover{border-color:#6366f1}
+.item-title{font-size:12px;font-weight:600;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.item-meta{display:flex;justify-content:space-between;align-items:center}
+.item-meta .platform{font-size:10px;font-weight:600;color:#ff8c42;text-transform:uppercase}
+.item-meta .eng{display:flex;gap:8px;font-size:10px;color:#5c6178}
+.item-meta .synced{color:#10b981;font-size:10px}
+.empty{text-align:center;padding:24px 16px;color:#5c6178}
+.empty .icon{font-size:28px;margin-bottom:6px}
+.footer{padding:10px 16px;border-top:1px solid #252938;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#5c6178}
+.footer a{color:#818cf8;text-decoration:none}
+.settings{display:none;padding:16px}
+.settings.show{display:block}
+.settings label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#5c6178;margin-bottom:4px;font-weight:600}
+.settings input{width:100%;padding:7px 10px;background:#1e2230;border:1px solid #252938;border-radius:5px;color:#e8eaf0;font-size:12px;outline:none}
+.settings input:focus{border-color:#6366f1}
+.settings .fg{margin-bottom:10px}
+.toast{position:fixed;top:8px;right:8px;padding:8px 14px;border-radius:6px;color:#fff;font-size:11px;font-weight:500;animation:fadeIn .2s;z-index:10}
+.toast-ok{background:#10b981}
+.toast-err{background:#ef4444}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">📕</div>
+  <div>
+    <h1>小红书工作台</h1>
+    <div class="sub">信源采集插件</div>
+  </div>
+</div>
+
+<div class="actions">
+  <button class="btn btn-p" id="clip-btn">📡 采集当前页</button>
+  <button class="btn btn-g" id="sync-btn">⬆ 同步到工作台</button>
+</div>
+
+<div class="list" id="source-list"></div>
+
+<div class="footer">
+  <span id="count-info">0 条待同步</span>
+  <div>
+    <a href="#" id="settings-toggle">⚙️ 设置</a>
+    <a href="#" id="open-dashboard" style="margin-left:10px">📊 打开工作台</a>
+  </div>
+</div>
+
+<div class="settings" id="settings-panel">
+  <div class="fg">
+    <label>工作台地址</label>
+    <input id="dashboard-url" placeholder="http://localhost:8080 或 https://xxx.github.io/xhs-dashboard">
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-p" id="save-settings" style="font-size:11px">💾 保存</button>
+    <button class="btn btn-ghost" id="clear-all" style="font-size:11px;color:#ff4d6a">🗑 清空全部</button>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

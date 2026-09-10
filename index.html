@@ -1816,6 +1816,87 @@ window.addEventListener('resize', checkMobile);
 checkMobile();
 
 // ═══════════════════════════════════════
+// CHROME EXTENSION SYNC
+// ═══════════════════════════════════════
+function handleExtImport() {
+  const hash = window.location.hash;
+  if (hash.startsWith('#import=')) {
+    try {
+      const data = JSON.parse(decodeURIComponent(hash.slice(8)));
+      if (Array.isArray(data) && data.length) {
+        const d = load();
+        let added = 0;
+        data.forEach(item => {
+          if (item.type === 'source' && item.title) {
+            // Dedup by URL
+            if (!d.sources.find(s => s.url === item.url)) {
+              d.sources.push({
+                id: nid(d), title: item.title, platform: item.platform || '小红书',
+                url: item.url || '', summary: item.summary || '',
+                keyFacts: [], engagement: item.engagement || {},
+                status: 'new', capturedAt: item.capturedAt || now(),
+                sourceType: item.sourceType || 'first-hand', tags: item.tags || [],
+                author: item.author || '', notes: '', images: item.images || []
+              });
+              added++;
+            }
+          }
+          if (item.type === 'review' || item.type === 'batch_review') {
+            if (item.notes) {
+              item.notes.forEach(n => {
+                if (n.title && !d.reviews.find(r => r.title === n.title)) {
+                  d.reviews.push({
+                    id: nid(d), title: n.title, publishedAt: n.publishedAt || '',
+                    views: n.views || 0, likes: n.likes || 0,
+                    collects: n.collects || 0, comments: n.comments || 0,
+                    newFollowers: 0, notes: '', createdAt: now()
+                  });
+                  added++;
+                }
+              });
+            }
+          }
+        });
+        if (added) {
+          addActivity(d, `从Chrome插件导入 ${added} 条数据`);
+          save(d);
+          toast(`从插件导入了 ${added} 条数据 ✅`);
+          refresh();
+        }
+        // Clean URL hash
+        history.replaceState(null, '', window.location.pathname);
+      }
+    } catch(e) {
+      console.error('Import error:', e);
+    }
+  }
+}
+
+// Listen for postMessage from extension
+window.addEventListener('message', (e) => {
+  if (e.data?.action === 'xhsWsSyncSources' && e.data.sources) {
+    const d = load();
+    let added = 0;
+    e.data.sources.forEach(item => {
+      if (item.title && !d.sources.find(s => s.url === item.url)) {
+        d.sources.push({
+          id: nid(d), title: item.title, platform: item.platform || '小红书',
+          url: item.url || '', summary: item.summary || '',
+          keyFacts: [], engagement: item.engagement || {},
+          status: 'new', capturedAt: item.capturedAt || now(),
+          sourceType: 'first-hand', tags: [], notes: ''
+        });
+        added++;
+      }
+    });
+    if (added) { save(d); refresh(); toast(`从插件同步 ${added} 条 ✅`); }
+  }
+});
+
+// Run on load
+handleExtImport();
+
+// ═══════════════════════════════════════
 // KEYBOARD SHORTCUTS
 // ═══════════════════════════════════════
 document.addEventListener('keydown', e => {
