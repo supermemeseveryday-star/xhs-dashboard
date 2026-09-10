@@ -321,6 +321,7 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
         <div class="nav-item" data-page="editor"><span class="icon">✍️</span>内容生产<span class="count" id="nav-editor"></span></div>
         <div class="nav-item" data-page="fact"><span class="icon">🔍</span>事实编辑<span class="count" id="nav-fact"></span></div>
         <div class="nav-item" data-page="review"><span class="icon">📈</span>数据复盘</div>
+        <div class="nav-item" data-page="training"><span class="icon">🧠</span>训练记录</div>
       </div>
       <div class="nav-group">
         <div class="nav-label">配置</div>
@@ -379,7 +380,8 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
           <div class="tab" data-f="archived" onclick="srcTab(this)">归档</div>
         </div>
         <button class="btn btn-ghost btn-sm" onclick="batchArchiveSrc()">📦 批量归档</button>
-        <button class="btn btn-p btn-sm" onclick="openModal('add-source')">＋ 添加信源</button>
+        <button class="btn btn-o btn-sm" onclick="openModal('ai-collect')">🤖 AI采集</button>
+        <button class="btn btn-p btn-sm" onclick="openModal('add-source')">＋ 手动添加</button>
       </div>
       <div class="source-grid" id="src-grid"></div>
     </div>
@@ -436,6 +438,7 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
             <button class="btn btn-sm btn-ghost" onclick="edCheckAI()">🤖 检测AI腔</button>
             <button class="btn btn-sm btn-ghost" onclick="edWordCount()">📊 字数统计</button>
             <div style="flex:1"></div>
+            <button class="btn btn-sm btn-o" id="ai-gen-btn" onclick="aiGenerate()">🤖 AI生成</button>
             <span class="badge" id="ed-status-badge"></span>
             <button class="btn btn-sm btn-g" onclick="edSave()">💾 保存</button>
           </div>
@@ -511,6 +514,20 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
       </div>
     </div>
 
+    <!-- ════ TRAINING LOG ════ -->
+    <div class="page" id="page-training">
+      <div class="page-scroll">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <p style="font-size:13px;color:var(--text2)">🧠 每次AI生成的文案都会记录在这里，方便回顾和导出训练数据</p>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportTrainingMd()">📥 导出全部 .md</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearTraining()" style="color:var(--red)">🗑 清空</button>
+          </div>
+        </div>
+        <div id="training-list"></div>
+      </div>
+    </div>
+
     <!-- ════ VOICE ════ -->
     <div class="page" id="page-voice">
       <div class="page-scroll" style="max-width:800px">
@@ -546,6 +563,20 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
               </select>
             </div>
             <button class="btn btn-p" onclick="saveSettings()">💾 保存设置</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><h3>🤖 AI 接口配置</h3><span style="font-size:11px;color:var(--text3)">用于AI信源采集</span></div>
+          <div class="card-body">
+            <div class="fg"><label>API Endpoint *</label><input id="s-api-url" placeholder="https://api.openai.com/v1/chat/completions"></div>
+            <div class="fg"><label>Model *</label><input id="s-api-model" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus"></div>
+            <div class="fg"><label>API Key *</label><input id="s-api-key" type="password" placeholder="sk-..."></div>
+            <div class="fg"><label>System Prompt（可选，高级）</label><textarea id="s-api-prompt" rows="4" placeholder="留空使用默认提示词。自定义可覆盖AI采集时的行为。"></textarea></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-p" onclick="saveSettings()">💾 保存设置</button>
+              <button class="btn btn-ghost btn-sm" onclick="testApi()">🔌 测试连接</button>
+              <span id="api-test-status" style="font-size:12px"></span>
+            </div>
           </div>
         </div>
         <div class="card">
@@ -598,7 +629,7 @@ function save(d) { localStorage.setItem(K, JSON.stringify(d)); }
 function fresh() {
   return { sources:[], briefs:[], drafts:[], facts:[], reviews:[],
     voice:{persona:'',style:'',redlines:'',headline:'',opening:'',closing:'',other:''},
-    settings:{account:'',tags:'',platform:'小红书'}, _nid:1, activity:[] };
+    settings:{account:'',tags:'',platform:'小红书',apiUrl:'',apiModel:'',apiKey:'',apiPrompt:''}, training:[], _nid:1, activity:[] };
 }
 function nid(d) { d._nid=(d._nid||1)+1; return 'i'+d._nid; }
 function addActivity(d, msg) { d.activity.unshift({msg, time:now()}); if(d.activity.length>50) d.activity.length=50; }
@@ -608,7 +639,7 @@ function toast(msg, t='t-ok') { const b=$('#toast-box'), el=document.createEleme
 // ═══════════════════════════════════════
 // NAVIGATION
 // ═══════════════════════════════════════
-const titles = {dashboard:'📊 工作台',source:'📡 信源采集',brief:'📋 选题审批',editor:'✍️ 内容生产','editor-workspace':'✍️ 写稿',fact:'🔍 事实编辑',review:'📈 数据复盘',voice:'🎤 Voice 规范',settings:'⚙️ 设置'};
+const titles = {dashboard:'📊 工作台',source:'📡 信源采集',brief:'📋 选题审批',editor:'✍️ 内容生产','editor-workspace':'✍️ 写稿',fact:'🔍 事实编辑',review:'📈 数据复盘',training:'🧠 训练记录',voice:'🎤 Voice 规范',settings:'⚙️ 设置'};
 
 function nav(page) {
   $$('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.page===page));
@@ -677,6 +708,7 @@ function refresh() {
   renderDrafts();
   renderFacts();
   renderReviews(d);
+  renderTraining();
   loadVoice(d);
   loadSettings(d);
 }
@@ -1315,10 +1347,18 @@ function loadSettings(d) {
   $('#s-account').value = s.account||'';
   $('#s-tags').value = s.tags||'';
   $('#s-platform').value = s.platform||'小红书';
+  $('#s-api-url').value = s.apiUrl||'';
+  $('#s-api-model').value = s.apiModel||'';
+  $('#s-api-key').value = s.apiKey||'';
+  $('#s-api-prompt').value = s.apiPrompt||'';
 }
 function saveSettings() {
   const d = load();
-  d.settings = { account:$('#s-account').value, tags:$('#s-tags').value, platform:$('#s-platform').value };
+  d.settings = {
+    account:$('#s-account').value, tags:$('#s-tags').value, platform:$('#s-platform').value,
+    apiUrl:$('#s-api-url').value, apiModel:$('#s-api-model').value,
+    apiKey:$('#s-api-key').value, apiPrompt:$('#s-api-prompt').value
+  };
   save(d); toast('设置已保存 ⚙️');
 }
 
@@ -1445,6 +1485,308 @@ function doAddReview() {
     newFollowers:+$('#m-followers').value||0, notes:$('#m-notes').value, createdAt:now()
   });
   addActivity(d, `录入数据: ${$('#m-title').value}`); save(d); closeModal(); refresh(); toast('数据已录入 📈');
+}
+
+// ═══════════════════════════════════════
+// AI GENERATION
+// ═══════════════════════════════════════
+async function callAI(messages, onChunk) {
+  const d = load();
+  const s = d.settings;
+  if (!s.apiUrl || !s.apiKey) { toast('请先在设置里配置 API Endpoint 和 Key', 't-err'); return null; }
+
+  const resp = await fetch(s.apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.apiKey}` },
+    body: JSON.stringify({
+      model: s.apiModel,
+      messages,
+      stream: !!onChunk,
+      temperature: 0.7,
+      max_tokens: 4096
+    })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    toast(`API 错误: ${resp.status}`, 't-err');
+    console.error('API Error:', err);
+    return null;
+  }
+
+  if (onChunk) {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') break;
+        try {
+          const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+          if (delta) { full += delta; onChunk(full); }
+        } catch(e) {}
+      }
+    }
+    return full;
+  } else {
+    const json = await resp.json();
+    return json.choices?.[0]?.message?.content || '';
+  }
+}
+
+async function aiGenerate() {
+  if (!currentDraftId) return;
+  const d = load();
+  const draft = d.drafts.find(x => x.id === currentDraftId);
+  if (!draft) return;
+
+  const s = d.settings;
+  if (!s.apiUrl || !s.apiKey) { toast('请先在设置里配置 API', 't-err'); nav('settings'); return; }
+
+  // Gather context
+  const v = d.voice;
+  const brief = draft.briefId ? d.briefs.find(b => b.id === draft.briefId) : null;
+  const sources = brief?.sourceId ? d.sources.filter(src => src.id === brief.sourceId) : [];
+
+  // Build system prompt
+  const defaultPrompt = `你是一个专业的小红书文案写手。严格遵守以下规范：
+
+## 人称与视角
+${v.persona || '第一人称「我」，年轻女生视角'}
+
+## 语言风格
+${v.style || '口语化，短句，有emoji，像朋友聊天'}
+
+## 绝对红线（违反任何一条就是失败）
+${v.redlines || '不编造数据、不假装亲测、不用震惊/居然标题党'}
+
+## 标题公式
+${v.headline || '数字+痛点+解决方案'}
+
+## 开头模板
+${v.opening || '以提问或痛点切入'}
+
+## 结尾模板
+${v.closing || '总结+互动引导'}
+
+## 输出要求
+1. 先输出标题（一行）
+2. 空一行
+3. 输出正文（口语化，适合直接口播）
+4. 每段不超过3行
+5. 不要用"综上所述""值得注意的是"等AI腔
+6. 所有数据必须标注来源，不能编造`;
+
+  const systemPrompt = s.apiPrompt || defaultPrompt;
+
+  // Build user prompt
+  let userPrompt = `请为以下选题写一篇小红书笔记：\n\n`;
+  userPrompt += `【选题】${draft.title}\n`;
+  if (brief) {
+    userPrompt += `【角度】${brief.angle || '—'}\n`;
+    userPrompt += `【分类】${brief.category || '—'}\n`;
+  }
+  if (sources.length) {
+    userPrompt += `\n【参考信源】\n`;
+    sources.forEach(src => {
+      userPrompt += `- ${src.title}（${src.platform}）：${src.summary}\n`;
+      if (src.keyFacts?.length) src.keyFacts.forEach(f => userPrompt += `  · ${f}\n`);
+    });
+  }
+  if (draft.content?.replace(/<[^>]*>/g, '').trim()) {
+    userPrompt += `\n【已有内容（在此基础上修改/续写）】\n${draft.content.replace(/<[^>]*>/g, '')}`;
+  }
+  userPrompt += `\n\n请直接输出笔记内容，不要解释你的思路。`;
+
+  const btn = $('#ai-gen-btn');
+  btn.textContent = '⏳ 生成中...';
+  btn.disabled = true;
+  $('#ed-body').innerHTML = '<p style="color:var(--text3)">🤖 AI 正在生成...</p>';
+
+  const result = await callAI(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    (partial) => {
+      // Stream: update editor in real-time
+      const formatted = partial.replace(/\n/g, '<br>');
+      $('#ed-body').innerHTML = formatted;
+    }
+  );
+
+  btn.textContent = '🤖 AI生成';
+  btn.disabled = false;
+
+  if (!result) { $('#ed-body').innerHTML = draft.content || ''; return; }
+
+  // Format result into HTML
+  const lines = result.split('\n');
+  let html = '';
+  let firstLine = true;
+  for (const line of lines) {
+    if (firstLine && (line.startsWith('#') || line.length < 40)) {
+      // First line might be the title
+      const title = line.replace(/^#+\s*/, '').trim();
+      if (title && !$('#ed-title').value) $('#ed-title').value = title;
+      firstLine = false;
+      continue;
+    }
+    firstLine = false;
+    if (line.trim()) html += `<p>${esc(line)}</p>`;
+  }
+  if (html) $('#ed-body').innerHTML = html;
+
+  // Auto-save
+  edSave();
+  toast('AI 生成完成 ✅');
+
+  // Save training log
+  saveTrainingLog(draft, brief, sources, systemPrompt, userPrompt, result);
+}
+
+function saveTrainingLog(draft, brief, sources, systemPrompt, userPrompt, result) {
+  const d = load();
+  const v = d.voice;
+
+  const md = `# 小红书文案训练记录
+
+## 元数据
+- **生成时间**: ${now()}
+- **选题**: ${draft.title}
+- **角度**: ${brief?.angle || '—'}
+- **分类**: ${brief?.category || '—'}
+- **模型**: ${d.settings.apiModel}
+
+## Voice 规范
+- **人称**: ${v.persona || '—'}
+- **风格**: ${v.style || '—'}
+- **红线**: ${v.redlines || '—'}
+- **标题公式**: ${v.headline || '—'}
+
+## 参考信源
+${sources.length ? sources.map(s => `- [${s.platform}] ${s.title}\n  ${s.summary}\n  关键事实: ${(s.keyFacts||[]).join('、')}`).join('\n') : '无'}
+
+## System Prompt
+\`\`\`
+${systemPrompt}
+\`\`\`
+
+## User Prompt
+\`\`\`
+${userPrompt}
+\`\`\`
+
+## 生成结果
+${result}
+
+---
+*此文件可用于后续 AI 训练/few-shot 参考*
+`;
+
+  d.training.push({
+    id: nid(d),
+    draftId: draft.id,
+    draftTitle: draft.title,
+    briefTitle: brief?.title || '',
+    model: d.settings.apiModel,
+    md: md,
+    createdAt: now()
+  });
+  save(d);
+}
+
+function renderTraining() {
+  const d = load();
+  const list = $('#training-list');
+  if (!d.training?.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">🧠</div><h3>暂无训练记录</h3><p>使用编辑器的「AI生成」后会自动记录</p></div>';
+    return;
+  }
+  list.innerHTML = [...d.training].reverse().map(t => `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-header">
+        <h3 style="font-size:13px">${esc(t.draftTitle)}</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="tag">${esc(t.model || '—')}</span>
+          <span style="font-size:11px;color:var(--text3)">${t.createdAt}</span>
+          <button class="btn btn-xs btn-ghost" onclick="downloadSingleMd('${t.id}')">📥 下载</button>
+          <button class="btn btn-xs btn-ghost" style="color:var(--red)" onclick="deleteTraining('${t.id}')">🗑</button>
+        </div>
+      </div>
+      <div class="card-body" style="max-height:200px;overflow-y:auto">
+        <pre style="font-size:11px;color:var(--text2);white-space:pre-wrap;line-height:1.5;font-family:inherit">${esc(t.md.slice(0, 500))}...</pre>
+      </div>
+    </div>
+  `).join('');
+}
+
+function downloadSingleMd(id) {
+  const d = load();
+  const t = d.training.find(x => x.id === id);
+  if (!t) return;
+  const blob = new Blob([t.md], { type: 'text/markdown' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `training-${t.draftTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_')}-${t.createdAt.replace(/[: ]/g, '-')}.md`;
+  a.click();
+  toast('已下载 .md 文件');
+}
+
+function exportTrainingMd() {
+  const d = load();
+  if (!d.training?.length) { toast('没有训练记录', 't-info'); return; }
+  const allMd = d.training.map(t => t.md).join('\n\n---\n\n');
+  const blob = new Blob([allMd], { type: 'text/markdown' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `xhs-training-all-${today()}.md`;
+  a.click();
+  toast(`已导出 ${d.training.length} 条训练记录`);
+}
+
+function deleteTraining(id) {
+  const d = load();
+  d.training = d.training.filter(x => x.id !== id);
+  save(d); renderTraining(); toast('已删除');
+}
+
+function clearTraining() {
+  if (!confirm('确认清空所有训练记录？')) return;
+  const d = load(); d.training = []; save(d); renderTraining(); toast('已清空');
+}
+
+async function testApi() {
+  const url = $('#s-api-url').value;
+  const model = $('#s-api-model').value;
+  const key = $('#s-api-key').value;
+  const status = $('#api-test-status');
+
+  if (!url || !key) { status.innerHTML = '<span style="color:var(--red)">请填写 Endpoint 和 Key</span>'; return; }
+  status.innerHTML = '<span style="color:var(--orange)">测试中...</span>';
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model: model || 'gpt-4o-mini', messages: [{ role: 'user', content: '说"连接成功"' }], max_tokens: 20 })
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      const reply = json.choices?.[0]?.message?.content || 'OK';
+      status.innerHTML = `<span style="color:var(--green)">✅ 连接成功: ${esc(reply.slice(0, 30))}</span>`;
+    } else {
+      const err = await resp.text();
+      status.innerHTML = `<span style="color:var(--red)">❌ ${resp.status}: ${esc(err.slice(0, 60))}</span>`;
+    }
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red)">❌ 网络错误: ${esc(e.message)}</span>`;
+  }
 }
 
 // ═══════════════════════════════════════
