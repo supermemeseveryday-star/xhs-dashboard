@@ -91,28 +91,26 @@ async function syncToDashboard() {
     }
 
     const url = await getDashboardUrl();
-
-    // Try to sync via opening dashboard with data
-    // Method 1: PostMessage to dashboard tab
+    const dataParam = encodeURIComponent(JSON.stringify(items));
     const dashboardTab = await findDashboardTab(url);
 
-    if (dashboardTab) {
-      // Dashboard is open - send via postMessage
-      chrome.tabs.sendMessage(dashboardTab.id, {
-        action: 'syncSources',
-        sources: items
-      });
-      chrome.runtime.sendMessage({ action: 'markSynced', ids: items.map(i => i._extId) });
-      toast(`✅ 已同步 ${items.length} 条`);
-      loadList();
-    } else {
-      // Dashboard not open - open it with data in URL hash
-      const dataParam = encodeURIComponent(JSON.stringify(items));
-      chrome.tabs.create({ url: `${url}#import=${dataParam}` });
-      chrome.runtime.sendMessage({ action: 'markSynced', ids: items.map(i => i._extId) });
-      toast(`✅ 已打开工作台同步 ${items.length} 条`);
-      loadList();
+    try {
+      if (dashboardTab) {
+        // Dashboard is open - update its hash; the page listens for hashchange
+        const base = dashboardTab.url.split('#')[0];
+        await chrome.tabs.update(dashboardTab.id, { url: `${base}#import=${dataParam}`, active: true });
+      } else {
+        // Dashboard not open - open it with data in URL hash
+        await chrome.tabs.create({ url: `${url}#import=${dataParam}` });
+      }
+    } catch (e) {
+      toast('❌ 打开工作台失败，数据未同步', 'err');
+      return;
     }
+    // Dashboard asks the user to confirm before importing
+    chrome.runtime.sendMessage({ action: 'markSynced', ids: items.map(i => i._extId) });
+    toast(`✅ 已发送 ${items.length} 条到工作台，请在工作台确认导入`);
+    loadList();
   });
 }
 
@@ -159,10 +157,9 @@ async function clearAll() {
 // HELPERS
 // ═══════════════════════════════════════
 function esc(s) {
-  if (!s) return '';
-  const d = document.createElement('span');
-  d.textContent = s;
-  return d.innerHTML;
+  if (s == null || s === '') return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function toast(msg, type = 'ok') {

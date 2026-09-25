@@ -49,6 +49,15 @@ python3 -m http.server 8080
 # 访问 http://localhost:8080
 ```
 
+### AI 功能（本地代理）
+AI 生成需要同时运行 `proxy.py`，用来绕过浏览器跨域限制：
+```bash
+python3 proxy.py
+# 监听 http://127.0.0.1:8877，只接受本机页面的请求，只转发到公网 https 接口
+```
+- 工作台部署在其他域名（如 GitHub Pages）时，设置 `XHS_ALLOWED_ORIGINS=https://your-username.github.io`
+- 想把转发目标锁定到特定接口，设置 `XHS_ALLOWED_API_HOSTS=token-plan-sgp.xiaomimimo.com`
+
 ## 文件结构
 
 ```
