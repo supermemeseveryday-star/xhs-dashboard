@@ -188,6 +188,7 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
 .editor-body{min-height:300px;font-size:14px;line-height:1.8;color:var(--text);outline:none}
 .editor-body:empty::before{content:attr(data-ph);color:var(--text3)}
 .editor-body p{margin-bottom:12px}
+.editor-body .ai-mark{background:var(--red-bg);border-bottom:2px wavy var(--red);padding:0 2px}
 .editor-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg1);font-size:11px;color:var(--text3)}
 .editor-aside{width:320px;min-width:320px;border-left:1px solid var(--border);background:var(--bg1);overflow-y:auto;display:flex;flex-direction:column}
 .editor-aside .aside-section{padding:16px;border-bottom:1px solid var(--border)}
@@ -292,6 +293,7 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
   .fact-pipeline{grid-template-columns:1fr}
   .stats-row.c4{grid-template-columns:repeat(2,1fr)}
   .source-grid{grid-template-columns:1fr}
+  .grid-2{grid-template-columns:1fr!important}
 }
 </style>
 </head>
@@ -352,7 +354,7 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
     <div class="page active" id="page-dashboard">
       <div class="page-scroll">
         <div class="stats-row c4" id="dash-stats"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="card">
             <div class="card-header"><h3>📌 流水线概览</h3></div>
             <div class="card-body" id="dash-pipeline"></div>
@@ -488,7 +490,7 @@ label{display:block;font-size:11px;font-weight:600;color:var(--text3);margin-bot
     <div class="page" id="page-review">
       <div class="page-scroll">
         <div class="stats-row c4" id="rev-stats"></div>
-        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px">
+        <div class="grid-2" style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px">
           <div class="card">
             <div class="card-header"><h3>📊 内容表现排行</h3></div>
             <div class="card-body" id="rev-ranking"></div>
@@ -633,7 +635,25 @@ function fresh() {
 }
 function nid(d) { d._nid=(d._nid||1)+1; return 'i'+d._nid; }
 function addActivity(d, msg) { d.activity.unshift({msg, time:now()}); if(d.activity.length>50) d.activity.length=50; }
-function esc(s) { if(!s)return ''; const e=document.createElement('span'); e.textContent=s; return e.innerHTML; }
+function esc(s) { if(s==null||s==='')return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// 外部数据里的数字可能是 "1.2万"、"3k" 或恶意字符串，统一转成非负整数
+function num(v) {
+  if(typeof v==='number') return Number.isFinite(v)&&v>0 ? Math.round(v) : 0;
+  const t = String(v??'').replace(/[^\d.万wk]/gi,'');
+  const n = parseFloat(t);
+  if(!Number.isFinite(n)||n<0) return 0;
+  if(/[万w]/i.test(t)) return Math.round(n*10000);
+  if(/k/i.test(t)) return Math.round(n*1000);
+  return Math.round(n);
+}
+// 只放行 http/https 链接，挡掉 javascript: 等协议
+function safeUrl(u) {
+  if(!u) return '';
+  try { const p=new URL(String(u).trim()); return (p.protocol==='http:'||p.protocol==='https:') ? p.href : ''; }
+  catch(e) { return ''; }
+}
+function platformClass(p) { return {小红书:'xhs',微博:'wb',抖音:'dy',知乎:'zh',B站:'bl',微信:'wx'}[p]||'other'; }
+function safeId(v) { return /^[\w-]{1,64}$/.test(String(v??'')) ? String(v) : ''; }
 function toast(msg, t='t-ok') { const b=$('#toast-box'), el=document.createElement('div'); el.className='toast '+t; el.textContent=msg; b.appendChild(el); setTimeout(()=>el.remove(),3000); }
 
 // ═══════════════════════════════════════
@@ -761,7 +781,7 @@ function renderDashboard(d) {
   const acts = d.activity||[];
   $('#dash-activity').innerHTML = acts.length ? acts.slice(0,15).map(a =>
     `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(37,41,56,0.4);font-size:12px">
-      <span style="color:var(--text3);min-width:100px">${a.time}</span>
+      <span style="color:var(--text3);min-width:100px">${esc(a.time)}</span>
       <span style="color:var(--text2)">${esc(a.msg)}</span>
     </div>`
   ).join('') : '<div class="empty"><p>还没有活动记录，开始添加信源吧！</p></div>';
@@ -782,7 +802,7 @@ function renderSources() {
   const grid = $('#src-grid');
   if(!items.length) { grid.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📡</div><h3>暂无信源</h3><p>点击「添加信源」开始收集一手资料</p><button class="btn btn-p" onclick="openModal(\'add-source\')">＋ 添加信源</button></div>'; return; }
   grid.innerHTML = items.map(s => {
-    const platClass = {小红书:'xhs',微博:'wb',抖音:'dy',知乎:'zh',B站:'bl',微信:'wx'}[s.platform]||'other';
+    const platClass = platformClass(s.platform);
     const statusBadge = s.status==='new'?'badge-new':s.status==='verified'?'badge-verified':'badge-archived';
     const statusText = s.status==='new'?'新发现':s.status==='verified'?'已核验':'归档';
     return `<div class="source-card" oncontextmenu="srcCtx(event,'${s.id}')" onclick="viewSource('${s.id}')">
@@ -795,8 +815,8 @@ function renderSources() {
       ${(s.keyFacts||[]).length ? `<div class="sc-facts">${s.keyFacts.slice(0,3).map(f=>`<div class="sc-fact">${esc(f)}</div>`).join('')}</div>` : ''}
       <div class="sc-meta">
         <div class="sc-engagement">
-          ${s.url?`<a href="${esc(s.url)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px">🔗 原文</a>`:''}
-          ${(s.engagement)?`<span>❤️ ${s.engagement.likes||0}</span><span>💬 ${s.engagement.comments||0}</span><span>⭐ ${s.engagement.collects||0}</span>`:''}
+          ${safeUrl(s.url)?`<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="font-size:11px">🔗 原文</a>`:''}
+          ${(s.engagement)?`<span>❤️ ${num(s.engagement.likes)}</span><span>💬 ${num(s.engagement.comments)}</span><span>⭐ ${num(s.engagement.collects)}</span>`:''}
         </div>
         <div class="sc-actions">
           ${s.status==='new'?`<button class="btn btn-xs btn-g" onclick="event.stopPropagation();srcVerify('${s.id}')">✓ 核验</button>`:''}
@@ -857,16 +877,16 @@ function viewSource(id) {
   const d=load(); const s=d.sources.find(x=>x.id===id); if(!s) return;
   openModalHtml('信源详情', `
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <span class="sc-platform ${(s.platform||'other')}">${esc(s.platform)}</span>
+      <span class="sc-platform ${platformClass(s.platform)}">${esc(s.platform)}</span>
       <span class="badge ${s.status==='new'?'badge-new':s.status==='verified'?'badge-verified':'badge-archived'}">${s.status==='new'?'新发现':s.status==='verified'?'已核验':'归档'}</span>
     </div>
     <h3 style="font-size:16px;margin-bottom:12px">${esc(s.title)}</h3>
     <p style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">${esc(s.summary)}</p>
     ${(s.keyFacts||[]).length?`<div style="margin-bottom:14px"><b style="font-size:12px;color:var(--text3)">关键事实：</b>${s.keyFacts.map(f=>`<div class="sc-fact" style="margin-top:4px">${esc(f)}</div>`).join('')}</div>`:''}
-    ${s.url?`<div style="margin-bottom:14px"><a href="${esc(s.url)}" target="_blank" style="font-size:12px">🔗 ${esc(s.url)}</a></div>`:''}
+    ${safeUrl(s.url)?`<div style="margin-bottom:14px"><a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer" style="font-size:12px">🔗 ${esc(s.url)}</a></div>`:(s.url?`<div style="margin-bottom:14px;font-size:12px;color:var(--text3)">⚠️ 链接格式无效：${esc(s.url)}</div>`:'')}
     <div style="display:flex;gap:16px;font-size:12px;color:var(--text3)">
-      <span>采集: ${s.capturedAt||'—'}</span>
-      ${s.verifiedAt?`<span>核验: ${s.verifiedAt}</span>`:''}
+      <span>采集: ${esc(s.capturedAt)||'—'}</span>
+      ${s.verifiedAt?`<span>核验: ${esc(s.verifiedAt)}</span>`:''}
     </div>
     ${s.notes?`<div style="margin-top:12px;padding:10px;background:var(--bg3);border-radius:6px;font-size:12px;color:var(--text2)">${esc(s.notes)}</div>`:''}
   `, `
@@ -918,7 +938,7 @@ function renderBriefs() {
             <div class="kc-desc">${esc(b.angle||'')}</div>
             <div class="kc-footer">
               <span class="kc-source">${b.sourceTitle?'🔗 '+esc(b.sourceTitle.slice(0,15)):''}</span>
-              <span class="kc-date">${(b.createdAt||'').slice(5,16)}</span>
+              <span class="kc-date">${esc(String(b.createdAt||'').slice(5,16))}</span>
             </div>
             ${b.status==='pending'?`<div class="kc-actions">
               <button class="btn btn-xs btn-g" onclick="event.stopPropagation();briefApprove('${b.id}')">✅ 批准</button>
@@ -1010,7 +1030,7 @@ function renderDrafts() {
   list.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
     ${items.map(r => {
       const sb = {writing:'badge-writing',reviewing:'badge-reviewing',ready:'badge-ready',published:'badge-published'}[r.status]||'badge-pending';
-      const st = {writing:'写作中',reviewing:'待审核',ready:'待发布',published:'已发布'}[r.status]||r.status;
+      const st = {writing:'写作中',reviewing:'待审核',ready:'待发布',published:'已发布'}[r.status]||esc(r.status);
       const words = (r.content||'').replace(/<[^>]*>/g,'').length;
       return `<div class="card" style="cursor:pointer" onclick="openEditor('${r.id}')">
         <div class="card-body">
@@ -1022,7 +1042,7 @@ function renderDrafts() {
           <p style="font-size:12px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc((r.content||'').replace(/<[^>]*>/g,'').slice(0,100))||'尚未开始写作'}</p>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
             <span style="font-size:11px;color:var(--text3)">Brief: ${esc((r.briefTitle||'—').slice(0,15))}</span>
-            <span style="font-size:11px;color:var(--text3)">${(r.createdAt||'').slice(5,16)}</span>
+            <span style="font-size:11px;color:var(--text3)">${esc(String(r.createdAt||'').slice(5,16))}</span>
           </div>
           <div style="display:flex;gap:4px;margin-top:10px;flex-wrap:wrap">
             ${r.status==='reviewing'?`<button class="btn btn-xs btn-g" onclick="event.stopPropagation();draftSetStatus('${r.id}','ready')">✅ 通过</button><button class="btn btn-xs btn-ghost" onclick="event.stopPropagation();draftSetStatus('${r.id}','writing')">← 退回</button>`:''}
@@ -1089,7 +1109,7 @@ function openEditor(id) {
   // Sources
   const sources = d.sources.filter(s=>(r.briefId && b && (s.id===b.sourceId)));
   $('#ed-sources').innerHTML = sources.length ? sources.map(s=>
-    `<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)"><a href="${esc(s.url||'#')}" target="_blank">${esc(s.title.slice(0,30))}</a></div>`
+    `<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--border)"><a href="${esc(safeUrl(s.url)||'#')}" target="_blank" rel="noopener noreferrer">${esc(String(s.title||'').slice(0,30))}</a></div>`
   ).join('') : '<p style="font-size:12px;color:var(--text3)">无关联信源</p>';
 
   updateWordCount();
@@ -1118,7 +1138,10 @@ function edSave() {
   if(!currentDraftId) return;
   const d=load(); const r=d.drafts.find(x=>x.id===currentDraftId);
   r.title = $('#ed-title').value;
-  r.content = $('#ed-body').innerHTML;
+  // 标红只用于显示，不写进草稿
+  const clean = $('#ed-body').cloneNode(true);
+  unmarkAI(clean);
+  r.content = clean.innerHTML;
   save(d);
   $('#ed-save-status').textContent = '已保存 ✓';
   setTimeout(()=>$('#ed-save-status').textContent='已保存', 2000);
@@ -1133,26 +1156,50 @@ function edSubmitReview() {
   if(r) { r.status='reviewing'; addActivity(d, `草稿「${r.title}」提交审核`); save(d); toast('已提交审核 👀'); openEditor(currentDraftId); }
 }
 
+const AI_PHRASES = [
+  '综上所述','总而言之','值得注意的是','不得不说','毋庸置疑',
+  '不言而喻','众所周知','由此可见','毫无疑问','坦白说',
+  '事实上','归根结底','从某种意义上','不可否认',
+  '在当今社会','随着.{1,15}?的发展','作为一种','引发了广泛关注',
+  '越来越多的人','不可忽视','至关重要','起着重要作用'
+];
+const AI_RE = new RegExp(AI_PHRASES.join('|'), 'g');
+
+// 去掉之前的标红，还原成纯文本
+function unmarkAI(root) {
+  root.querySelectorAll('span.ai-mark').forEach(m => m.replaceWith(document.createTextNode(m.textContent)));
+  root.normalize();
+}
+
 function edCheckAI() {
   const body = $('#ed-body');
-  const text = body.innerHTML;
-  const aiPhrases = [
-    '综上所述','总而言之','值得注意的是','不得不说','毋庸置疑',
-    '不言而喻','众所周知','由此可见','毫无疑问','坦白说',
-    '不得不说','事实上','归根结底','从某种意义上','不可否认',
-    '在当今社会','随着...的发展','作为一种','引发了广泛关注',
-    '越来越多的人','不可忽视','至关重要','起着重要作用'
-  ];
+  unmarkAI(body);
+  // 只在文本节点里匹配，不会碰到 HTML 标签
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
   let found = 0;
-  let html = text;
-  aiPhrases.forEach(phrase => {
-    const re = new RegExp(phrase, 'g');
-    if(re.test(html)) {
-      found += (html.match(re)||[]).length;
-      html = html.replace(re, `<span style="background:var(--red-bg);border-bottom:2px wavy var(--red);padding:0 2px" title="AI腔：建议改写">${phrase}</span>`);
+  nodes.forEach(node => {
+    const text = node.nodeValue;
+    AI_RE.lastIndex = 0;
+    if (!AI_RE.test(text)) return;
+    AI_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = AI_RE.exec(text))) {
+      frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const mark = document.createElement('span');
+      mark.className = 'ai-mark';
+      mark.title = 'AI腔：建议改写';
+      mark.textContent = m[0];
+      frag.appendChild(mark);
+      last = m.index + m[0].length;
+      found++;
     }
+    frag.appendChild(document.createTextNode(text.slice(last)));
+    node.replaceWith(frag);
   });
-  if(found) { body.innerHTML = html; toast(`发现 ${found} 处AI腔，已标红 🔍`,'t-err'); }
+  if(found) toast(`发现 ${found} 处AI腔，已标红 🔍`,'t-err');
   else toast('没有检测到常见AI腔 ✅','t-ok');
 }
 
@@ -1199,9 +1246,9 @@ function renderFactCard(f) {
   return `<div class="fact-card" oncontextmenu="factCtx(event,'${f.id}')">
     <div class="fc-title">${esc(f.title)}</div>
     ${f.claim?`<div class="fc-claim">📝 ${esc(f.claim)}</div>`:''}
-    ${f.sourceUrl?`<div class="fc-source"><a href="${esc(f.sourceUrl)}" target="_blank">🔗 原始来源</a></div>`:''}
+    ${safeUrl(f.sourceUrl)?`<div class="fc-source"><a href="${esc(safeUrl(f.sourceUrl))}" target="_blank" rel="noopener noreferrer">🔗 原始来源</a></div>`:''}
     ${f.result?`<div class="fc-result ${vs}">${f.verifyResult==='pass'?'✅':f.verifyResult==='fail'?'❌':'⚠️'} ${esc(f.result)}</div>`:''}
-    <div style="font-size:11px;color:var(--text3);margin-top:8px">关联: ${esc(f.draftTitle||'—')} · ${f.createdAt||''}</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">关联: ${esc(f.draftTitle||'—')} · ${esc(f.createdAt)}</div>
     <div class="fc-actions">
       ${f.status!=='done'?`<button class="btn btn-xs btn-p" onclick="openFactUpdate('${f.id}')">✏️ 更新</button><button class="btn btn-xs btn-g" onclick="factDone('${f.id}')">✅ 完成</button>`:''}
       <button class="btn btn-xs btn-ghost" style="color:var(--red)" onclick="factDelete('${f.id}')">🗑</button>
@@ -1230,7 +1277,7 @@ function openFactUpdate(id) {
   const d=load(); const f=d.facts.find(x=>x.id===id); if(!f) return;
   openModalHtml('更新核查结果', `
     <div class="fg"><label>待验证声明</label><div style="padding:10px;background:var(--bg3);border-radius:6px;font-size:13px;border-left:3px solid var(--orange)">${esc(f.claim||'')}</div></div>
-    <div class="fg"><label>原始来源</label><a href="${esc(f.sourceUrl||'#')}" target="_blank" style="font-size:12px">${esc(f.sourceUrl||'未提供')}</a></div>
+    <div class="fg"><label>原始来源</label><a href="${esc(safeUrl(f.sourceUrl)||'#')}" target="_blank" rel="noopener noreferrer" style="font-size:12px">${esc(f.sourceUrl||'未提供')}</a></div>
     <div class="fg"><label>核查结果 *</label><textarea id="m-result" placeholder="对比原文后的结论...">${esc(f.result||'')}</textarea></div>
     <div class="fg"><label>判定</label>
       <div style="display:flex;gap:8px;margin-top:4px">
@@ -1254,7 +1301,11 @@ function doFactUpdate(id) {
 // 5. REVIEW MODULE
 // ═══════════════════════════════════════
 function renderReviews(d) {
-  const rs = d.reviews;
+  // 数据可能来自插件/导入文件，先统一成数字再渲染
+  const rs = d.reviews.map(r => ({...r,
+    views:num(r.views), likes:num(r.likes), collects:num(r.collects), comments:num(r.comments),
+    newFollowers:Number.isFinite(+r.newFollowers) ? Math.round(+r.newFollowers) : 0
+  }));
   // Stats
   const tv = rs.reduce((s,r)=>s+(r.views||0),0);
   const te = rs.reduce((s,r)=>s+(r.likes||0)+(r.collects||0)+(r.comments||0),0);
@@ -1282,10 +1333,13 @@ function renderReviews(d) {
 
   // Insights
   const insights = [];
-  if(sorted[0]) insights.push({t:'🏆 最佳内容', d:`「${sorted[0].title}」阅读${(sorted[0].views||0).toLocaleString()}，分析其选题和标题。`});
+  if(sorted[0]) insights.push({t:'🏆 最佳内容', d:`「${esc(sorted[0].title)}」阅读${(sorted[0].views||0).toLocaleString()}，分析其选题和标题。`});
   if(sorted.length>=3) {
-    const topTags = sorted.slice(0,3).map(r=>r.title).join('、');
-    insights.push({t:'📊 Top3共性', d:`前3名内容标题都用了具体数字+结果承诺，建议沿用。`});
+    // 只陈述能从数据里算出来的事实，不下没有依据的结论
+    const top3 = sorted.slice(0,3);
+    const withNum = top3.filter(r=>/\d|[一二三四五六七八九十百千万]/.test(r.title||'')).length;
+    const avgLen = Math.round(top3.reduce((s,r)=>s+String(r.title||'').length,0)/3);
+    insights.push({t:'📊 Top3标题', d:`阅读前3名中 ${withNum}/3 篇标题含数字，平均标题长度 ${avgLen} 字。可对照排名靠后的笔记看差异。`});
   }
   if(rate>5) insights.push({t:'🎯 高互动率', d:`互动率${rate}%高于平均，继续保持内容互动引导。`});
   else if(rate>0) insights.push({t:'📈 提升建议', d:`互动率${rate}%，可在结尾增加提问/投票引导提升互动。`});
@@ -1311,13 +1365,13 @@ function renderReviews(d) {
       const rate = r.views ? (eng/r.views*100).toFixed(1)+'%' : '—';
       return `<tr>
         <td style="font-weight:500;color:var(--text)">${esc(r.title)}</td>
-        <td>${r.publishedAt||'—'}</td>
+        <td>${esc(r.publishedAt)||'—'}</td>
         <td class="num">${(r.views||0).toLocaleString()}</td>
         <td class="num">${(r.likes||0).toLocaleString()}</td>
         <td class="num">${(r.collects||0).toLocaleString()}</td>
         <td class="num">${(r.comments||0).toLocaleString()}</td>
         <td class="num" style="color:${parseFloat(rate)>3?'var(--green)':'var(--text2)'}">${rate}</td>
-        <td><button class="btn btn-xs btn-ghost" style="color:var(--red)" onclick="reviewDelete('${r.id}')">🗑</button></td>
+        <td><button class="btn btn-xs btn-ghost" style="color:var(--red)" onclick="reviewDelete('${esc(r.id)}')">🗑</button></td>
       </tr>`;
     }).join('')}</tbody>
   </table>` : '<div class="empty"><p>点击上方「录入数据」开始</p></div>';
@@ -1411,7 +1465,7 @@ function openModal(type) {
   else if(type==='add-draft') {
     const d=load(); const approved=d.briefs.filter(b=>b.status==='approved');
     openModalHtml('✍️ 新建草稿', `
-      <div class="fg"><label>关联选题</label><select id="m-brief"><option value="">— 不关联 —</option>${approved.map(b=>`<option value="${b.id}" data-title="${esc(b.title)}">${esc(b.title)}</option>`).join('')}</select></div>
+      <div class="fg"><label>关联选题</label><select id="m-brief"><option value="">— 不关联 —</option>${approved.map(b=>`<option value="${esc(b.id)}" data-title="${esc(b.title)}">${esc(b.title)}</option>`).join('')}</select></div>
       <div class="fg"><label>标题 *</label><input id="m-title" placeholder="笔记标题"></div>
     `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-p" onclick="doAddDraft()">创建草稿</button>`);
   }
@@ -1419,7 +1473,7 @@ function openModal(type) {
     const d=load();
     openModalHtml('🔍 添加事实核查', `
       <div class="fg"><label>核查项标题 *</label><input id="m-title" placeholder="例：XX品牌成分含量是否属实"></div>
-      <div class="fg"><label>关联草稿</label><select id="m-draft"><option value="">— 不关联 —</option>${d.drafts.map(dr=>`<option value="${dr.id}" data-title="${esc(dr.title)}">${esc(dr.title)}</option>`).join('')}</select></div>
+      <div class="fg"><label>关联草稿</label><select id="m-draft"><option value="">— 不关联 —</option>${d.drafts.map(dr=>`<option value="${esc(dr.id)}" data-title="${esc(dr.title)}">${esc(dr.title)}</option>`).join('')}</select></div>
       <div class="fg"><label>待验证声明 *</label><textarea id="m-claim" placeholder="需要核对的具体内容/引语/数据..."></textarea></div>
       <div class="fg"><label>原始来源链接</label><input id="m-url" placeholder="https://... (用来核对的原始链接)"></div>
     `, `<button class="btn btn-ghost" onclick="closeModal()">取消</button><button class="btn btn-p" onclick="doAddFact()">添加核查项</button>`);
@@ -1517,7 +1571,7 @@ async function callAI(messages) {
       body: fetchBody
     });
   } catch(e) {
-    throw new Error(`代理服务器连不上 (${e.message})\n\n请确保 proxy.py 在运行:\npython3 /root/zz/dashboard/proxy.py`);
+    throw new Error(`代理服务器连不上 (${e.message})\n\n请在项目目录运行:\npython3 proxy.py`);
   }
 
   if (!resp.ok) {
@@ -1723,7 +1777,7 @@ function renderTraining() {
         <h3 style="font-size:13px">${esc(t.draftTitle)}</h3>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="tag">${esc(t.model || '—')}</span>
-          <span style="font-size:11px;color:var(--text3)">${t.createdAt}</span>
+          <span style="font-size:11px;color:var(--text3)">${esc(t.createdAt)}</span>
           <button class="btn btn-xs btn-ghost" onclick="downloadSingleMd('${t.id}')">📥 下载</button>
           <button class="btn btn-xs btn-ghost" style="color:var(--red)" onclick="deleteTraining('${t.id}')">🗑</button>
         </div>
@@ -1817,7 +1871,16 @@ function exportData() {
 function importData(e) {
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
-  r.onload = ev => { try { const d=JSON.parse(ev.target.result); if(d.sources&&d.briefs){save(d);refresh();toast('导入成功 📤');}else toast('格式不对','t-err'); } catch(err){toast('导入失败','t-err');} };
+  r.onload = ev => {
+    try {
+      const d=JSON.parse(ev.target.result);
+      if(!(Array.isArray(d.sources)&&Array.isArray(d.briefs))) { toast('格式不对','t-err'); return; }
+      // id 会被拼进 onclick，必须是安全字符
+      const lists=['sources','briefs','drafts','facts','reviews','training'].map(k=>d[k]||[]);
+      if(lists.some(l=>!Array.isArray(l)||l.some(x=>!safeId(x?.id)))) { toast('备份文件里有非法 id，已拒绝导入','t-err'); return; }
+      save({...fresh(), ...d}); refresh(); toast('导入成功 📤');
+    } catch(err){toast('导入失败','t-err');}
+  };
   r.readAsText(f);
 }
 
@@ -1835,80 +1898,71 @@ checkMobile();
 // ═══════════════════════════════════════
 // CHROME EXTENSION SYNC
 // ═══════════════════════════════════════
-function handleExtImport() {
-  const hash = window.location.hash;
-  if (hash.startsWith('#import=')) {
-    try {
-      const data = JSON.parse(decodeURIComponent(hash.slice(8)));
-      if (Array.isArray(data) && data.length) {
-        const d = load();
-        let added = 0;
-        data.forEach(item => {
-          if (item.type === 'source' && item.title) {
-            // Dedup by URL
-            if (!d.sources.find(s => s.url === item.url)) {
-              d.sources.push({
-                id: nid(d), title: item.title, platform: item.platform || '小红书',
-                url: item.url || '', summary: item.summary || '',
-                keyFacts: [], engagement: item.engagement || {},
-                status: 'new', capturedAt: item.capturedAt || now(),
-                sourceType: item.sourceType || 'first-hand', tags: item.tags || [],
-                author: item.author || '', notes: '', images: item.images || []
-              });
-              added++;
-            }
-          }
-          if (item.type === 'review' || item.type === 'batch_review') {
-            if (item.notes) {
-              item.notes.forEach(n => {
-                if (n.title && !d.reviews.find(r => r.title === n.title)) {
-                  d.reviews.push({
-                    id: nid(d), title: n.title, publishedAt: n.publishedAt || '',
-                    views: n.views || 0, likes: n.likes || 0,
-                    collects: n.collects || 0, comments: n.comments || 0,
-                    newFollowers: 0, notes: '', createdAt: now()
-                  });
-                  added++;
-                }
-              });
-            }
-          }
-        });
-        if (added) {
-          addActivity(d, `从Chrome插件导入 ${added} 条数据`);
-          save(d);
-          toast(`从插件导入了 ${added} 条数据 ✅`);
-          refresh();
-        }
-        // Clean URL hash
-        history.replaceState(null, '', window.location.pathname);
-      }
-    } catch(e) {
-      console.error('Import error:', e);
+const str = (v, max=2000) => (v==null ? '' : String(v)).slice(0, max);
+
+function importExtItems(data) {
+  const d = load();
+  let added = 0;
+  data.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    if (item.type === 'source' && item.title) {
+      const url = safeUrl(item.url);
+      // Dedup by URL
+      if (url && d.sources.find(s => s.url === url)) return;
+      const eng = item.engagement || {};
+      d.sources.push({
+        id: nid(d), title: str(item.title, 200), platform: str(item.platform, 20) || '小红书',
+        url, summary: str(item.summary),
+        keyFacts: [], engagement: { likes: num(eng.likes), collects: num(eng.collects), comments: num(eng.comments) },
+        status: 'new', capturedAt: str(item.capturedAt, 20) || now(),
+        sourceType: item.sourceType === 'second-hand' ? 'second-hand' : 'first-hand',
+        tags: Array.isArray(item.tags) ? item.tags.slice(0, 20).map(t => str(t, 50)) : [],
+        author: str(item.author, 100), notes: '',
+        images: Array.isArray(item.images) ? item.images.map(safeUrl).filter(Boolean).slice(0, 3) : []
+      });
+      added++;
     }
+    if ((item.type === 'review' || item.type === 'batch_review') && Array.isArray(item.notes)) {
+      item.notes.forEach(n => {
+        if (n && n.title && !d.reviews.find(r => r.title === n.title)) {
+          d.reviews.push({
+            id: nid(d), title: str(n.title, 200), publishedAt: str(n.publishedAt, 20),
+            views: num(n.views), likes: num(n.likes),
+            collects: num(n.collects), comments: num(n.comments),
+            newFollowers: 0, notes: '', createdAt: now()
+          });
+          added++;
+        }
+      });
+    }
+  });
+  if (added) {
+    addActivity(d, `从Chrome插件导入 ${added} 条数据`);
+    save(d);
+    toast(`从插件导入了 ${added} 条数据 ✅`);
+    refresh();
+  } else {
+    toast('没有新的数据需要导入', 't-info');
   }
 }
 
-// Listen for postMessage from extension
-window.addEventListener('message', (e) => {
-  if (e.data?.action === 'xhsWsSyncSources' && e.data.sources) {
-    const d = load();
-    let added = 0;
-    e.data.sources.forEach(item => {
-      if (item.title && !d.sources.find(s => s.url === item.url)) {
-        d.sources.push({
-          id: nid(d), title: item.title, platform: item.platform || '小红书',
-          url: item.url || '', summary: item.summary || '',
-          keyFacts: [], engagement: item.engagement || {},
-          status: 'new', capturedAt: item.capturedAt || now(),
-          sourceType: 'first-hand', tags: [], notes: ''
-        });
-        added++;
-      }
-    });
-    if (added) { save(d); refresh(); toast(`从插件同步 ${added} 条 ✅`); }
-  }
-});
+// 插件通过打开/更新 #import=... 链接把数据交给工作台。
+// 任何人都能构造这种链接，所以导入前要用户确认，并且所有字段都会被清洗。
+function handleExtImport() {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#import=')) return;
+  // 先清掉 hash，避免刷新时重复导入
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+  let data;
+  try { data = JSON.parse(decodeURIComponent(hash.slice(8))); }
+  catch(e) { console.error('Import error:', e); toast('导入数据格式错误', 't-err'); return; }
+  if (!Array.isArray(data) || !data.length) return;
+  const preview = data.slice(0, 5).map(i => '· ' + str(i?.title || (i?.notes ? `${i.notes.length} 条笔记数据` : '(无标题)'), 40)).join('\n');
+  if (!confirm(`要从 Chrome 插件导入 ${data.length} 条数据吗？\n\n${preview}${data.length > 5 ? '\n…' : ''}\n\n如果不是你刚在插件里点的「同步」，请点取消。`)) return;
+  importExtItems(data);
+}
+
+window.addEventListener('hashchange', handleExtImport);
 
 // Run on load
 handleExtImport();
